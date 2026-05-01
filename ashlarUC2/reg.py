@@ -1199,8 +1199,19 @@ class PyramidWriter:
         assert level >= 1
         num_channels, h, w = self.level_full_shapes[level]
         tshape = self.tile_shapes[level] or (h, w)
-        tiff = tifffile.TiffFile(self.path)
-        zimg = zarr.open(tiff.aszarr(series=0, level=level-1, squeeze=False))
+        # Read the previous pyramid level directly into memory to avoid zarr
+        # API incompatibilities (zarr >= 3.x dropped RegularChunkGrid).
+        with tifffile.TiffFile(self.path) as tiff:
+            prev_level = tiff.series[0].levels[level - 1]
+            prev_dtype = prev_level.dtype
+            prev_img = prev_level.asarray()
+        # Normalize to (channels, height, width)
+        if prev_img.ndim == 2:
+            prev_img = prev_img[np.newaxis, :, :]
+        elif prev_img.ndim == 4:
+            # (channels, height, width, samples) -> drop samples dim
+            prev_img = prev_img[:, :, :, 0]
+        _, prev_h, prev_w = prev_img.shape
         for c in range(num_channels):
             if self.verbose:
                 sys.stdout.write(
@@ -1209,15 +1220,15 @@ class PyramidWriter:
                 sys.stdout.flush()
             th = tshape[0] * self.scale
             tw = tshape[1] * self.scale
-            for y in range(0, zimg.shape[1], th):
-                for x in range(0, zimg.shape[2], tw):
-                    a = zimg[c, y:y+th, x:x+tw, 0]
+            for y in range(0, prev_h, th):
+                for x in range(0, prev_w, tw):
+                    a = prev_img[c, y:y+th, x:x+tw]
                     a = skimage.transform.downscale_local_mean(
                         a, (self.scale, self.scale)
                     )
-                    if np.issubdtype(zimg.dtype, np.integer):
+                    if np.issubdtype(prev_dtype, np.integer):
                         a = np.around(a)
-                    a = a.astype(zimg.dtype)
+                    a = a.astype(prev_dtype)
                     yield a
 
     def run(self):

@@ -204,7 +204,7 @@ def pastefunc_blend(target, img):
     # This should catch actual holes but not the actual unfilled space.
     # FIXME Should generate mask from tile boundaries instead.
     hole_threshold = np.mean(target.shape)
-    mask = skimage.morphology.remove_small_holes(target != 0, hole_threshold)
+    mask = skimage.morphology.remove_small_holes(target != 0, max_size=hole_threshold)
     dist = scipy.ndimage.distance_transform_cdt(mask)
     dmax = dist.max()
     if dmax == 0:
