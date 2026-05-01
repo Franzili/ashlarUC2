@@ -210,6 +210,166 @@ class NumpyMetadata(Metadata):
 
 
 
+class ImSwitchTiffReader(Reader):
+    """
+    Reader for individual TIFF tiles produced by ImSwitch ExperimentController.
+
+    Filename convention::
+
+        t{YYYYMMDD_HHMMSS}_x{X}_y{Y}_z{Z}_c{cIdx}_{channelName}_i{iter}_p{power}.tif
+
+    X, Y, Z are stage coordinates in microns * 1000 (integers).  The reader
+    collects all files matching this pattern in *path* (a directory or a list
+    of file-paths), groups tiles by channel index, and exposes them as a
+    single-cycle reader whose tile positions come directly from the embedded
+    stage coordinates.
+    """
+
+    import re as _re
+
+    _FNAME_RE = _re.compile(
+        r"t(?P<timestamp>\d{8}_\d{6})"
+        r"_x(?P<x>-?\d+)"
+        r"_y(?P<y>-?\d+)"
+        r"_z(?P<z>-?\d+)"
+        r"_c(?P<c_idx>\d+)"
+        r"_(?P<channel>[A-Za-z0-9_]+?)"
+        r"_i(?P<iter>\d+)"
+        r"_p(?P<power>\d+)"
+        r"\.tif$"
+    )
+
+    def __init__(self, path_or_files, pixel_size=None, c_idx_filter=None):
+        """
+        Parameters
+        ----------
+        path_or_files : str or list[str]
+            Directory containing *.tif files, or an explicit list of file paths.
+        pixel_size : float
+            Physical pixel size in microns.
+        c_idx_filter : int or None
+            If set, only load tiles whose ``c_idx`` field matches this value.
+            Useful when a directory contains multiple channels and you only want
+            one channel per reader instance (the typical ashlar usage).
+        """
+        import os
+        import pathlib as _pathlib
+
+        if isinstance(path_or_files, (str, _pathlib.Path)):
+            search_dir = _pathlib.Path(path_or_files)
+            all_files = sorted(search_dir.rglob("*.tif"))
+            file_paths = [str(f) for f in all_files]
+        else:
+            file_paths = [str(f) for f in path_or_files]
+
+        # Parse filenames and collect matching tiles
+        parsed = []
+        for fp in file_paths:
+            m = self._FNAME_RE.match(os.path.basename(fp))
+            if m is None:
+                continue
+            ci = int(m.group("c_idx"))
+            if c_idx_filter is not None and ci != c_idx_filter:
+                continue
+            parsed.append({
+                "filepath": fp,
+                "x": int(m.group("x")),
+                "y": int(m.group("y")),
+                "z": int(m.group("z")),
+                "c_idx": ci,
+                "channel": m.group("channel"),
+                "iterator": int(m.group("iter")),
+            })
+
+        if not parsed:
+            raise ValueError(
+                f"No matching ImSwitch TIFF files found in: {path_or_files}"
+            )
+        # try to read the pixel_size from the ome meta-data 
+        self._pixel_size = pixel_size
+
+        # Sort by iterator so series indices are deterministic
+        parsed.sort(key=lambda d: d["iterator"])
+        self._tiles = parsed
+
+        # Read one tile to get image shape and dtype
+        sample = tifffile.imread(parsed[0]["filepath"])
+        if sample.ndim == 2:
+            self._num_channels = 1
+            self._height, self._width = sample.shape
+        elif sample.ndim == 3:
+            # (C, H, W) or (H, W, C) — assume (H, W, C) for RGB
+            if sample.shape[2] in (3, 4):
+                self._num_channels = 1   # treat as single greyscale-like frame
+                self._height, self._width = sample.shape[:2]
+            else:
+                self._num_channels = sample.shape[0]
+                self._height, self._width = sample.shape[1:]
+        else:
+            raise ValueError(f"Unexpected image dimensions: {sample.shape}")
+        self._dtype = sample.dtype
+        self._metadata = ImSwitchTiffMetadata(self)
+
+        
+    @property
+    def metadata(self):
+        return self._metadata
+
+    def read(self, series, c):
+        tile = self._tiles[series]
+        img = tifffile.imread(tile["filepath"])
+        if img.ndim == 2:
+            return img
+        elif img.ndim == 3 and img.shape[2] in (3, 4):
+            # RGB — return as-is (single channel)
+            return img
+        else:
+            # (C, H, W)
+            return img[c]
+
+
+class ImSwitchTiffMetadata(Metadata):
+    """Metadata companion for :class:`ImSwitchTiffReader`."""
+
+    def __init__(self, reader: "ImSwitchTiffReader"):
+        self._reader = reader
+
+        # Build positions array: stage coords in µm → pixels
+        # The stage X maps to image columns (axis 1) and Y to rows (axis 0).
+        # We divide by 1000 (stored as µm*1000) and then by pixel_size
+        # (µm/px) to get pixel positions.
+        scale = 1.0 / (1000.0 * reader._pixel_size)
+        raw_positions = np.array(
+            [[t["y"] * scale, t["x"] * scale] for t in reader._tiles],
+            dtype=float,
+        )
+        # Shift so the minimum position is at (0, 0)
+        raw_positions -= raw_positions.min(axis=0)
+        self._positions = raw_positions
+
+    @property
+    def _num_images(self):
+        return len(self._reader._tiles)
+
+    @property
+    def num_channels(self):
+        return self._reader._num_channels
+
+    @property
+    def pixel_size(self):
+        return self._reader._pixel_size
+
+    @property
+    def pixel_dtype(self):
+        return self._reader._dtype
+
+    def tile_position(self, i):
+        return self._positions[i]
+
+    def tile_size(self, i):
+        return np.array([self._reader._height, self._reader._width])
+
+
 class BarrelCorrectionReader(Reader):
     """Wraps a reader to correct barrel/pincushion image distortion."""
 

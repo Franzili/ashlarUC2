@@ -7,11 +7,11 @@ import numpy as np
 
 
 # Pre-calculate the Laplacian operator kernel. We'll always be using 2D images.
-_laplace_kernel = skimage.restoration.uft.laplacian(2, (3, 3))[1]
 
 def whiten(img, sigma):
     img = skimage.img_as_float32(img)
-    if sigma == 0:
+    if False and sigma == 0:
+        _laplace_kernel = skimage.restoration.uft.laplacian(2, (3, 3))[1]
         output = scipy.ndimage.convolve(img, _laplace_kernel)
     else:
         output = scipy.ndimage.gaussian_laplace(img, sigma)
@@ -40,8 +40,7 @@ def register(img1, img2, sigma, upsample=10):
         img2w,
         upsample_factor=upsample,
         normalization=None,
-        return_error=False,
-    )
+    )[0]
     # At this point we may have a shift in the wrong quadrant since the FFT
     # assumes the signal is periodic. We test all four possibilities and return
     # the shift that gives the highest direct correlation (sum of products).

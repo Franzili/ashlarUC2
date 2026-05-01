@@ -10,13 +10,13 @@ import numpy as np
 try:
     from .. import __version__ as VERSION
     from .. import reg
-    from ..reg import PlateReader, NumpyReader, NumpyMetadata
+    from ..reg import PlateReader, NumpyReader, NumpyMetadata, ImSwitchTiffReader
     from ..filepattern import FilePatternReader
     from ..fileseries import FileSeriesReader
     from ..zen import ZenReader
 except:
     from ashlarUC2 import __version__ as VERSION
-    from ashlarUC2.reg import PlateReader, NumpyReader, NumpyMetadata
+    from ashlarUC2.reg import PlateReader, NumpyReader, NumpyMetadata, ImSwitchTiffReader
     from ashlarUC2.filepattern import FilePatternReader
     from ashlarUC2.fileseries import FileSeriesReader
     from ashlarUC2.zen import ZenReader
@@ -257,6 +257,9 @@ def process_single(
 
     if isinstance(filepaths[0], np.ndarray):
         reader = build_numpy_reader(filepaths[0], position_list=position_list, pixel_size=pixel_size, plate_well=plate_well)
+    elif isinstance(filepaths[0], ImSwitchTiffReader):
+        # Pre-built reader passed directly — use as-is
+        reader = filepaths[0]
     else:
         if not quiet:
             print("Stitching and registering input images")
@@ -361,7 +364,28 @@ readers = {
     'fileseries': FileSeriesReader,
     'zen': ZenReader,
     'numpy': NumpyReader,
+    'imswitch': ImSwitchTiffReader,
 }
+
+
+def build_imswitch_reader(path_or_files, pixel_size=1.0, c_idx=None, barrel_correction=0):
+    """Build a reader for ImSwitch-style individual TIFF tiles.
+
+    Parameters
+    ----------
+    path_or_files : str or list[str]
+        Directory or list of tile file paths.
+    pixel_size : float
+        Physical pixel size in microns.
+    c_idx : int or None
+        Filter to a specific channel index (None = all channels in each tile).
+    barrel_correction : float
+        Barrel distortion correction coefficient.
+    """
+    reader = ImSwitchTiffReader(path_or_files, pixel_size=pixel_size, c_idx_filter=c_idx)
+    if barrel_correction != 0:
+        reader = reg.BarrelCorrectionReader(reader, barrel_correction)
+    return reader
 
 
 def build_numpy_reader(array, position_list, pixel_size, plate_well=None):
