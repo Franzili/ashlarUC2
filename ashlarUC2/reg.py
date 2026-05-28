@@ -340,14 +340,10 @@ class ImSwitchTiffMetadata(Metadata):
         # Build positions array: stage coords in µm → pixels.
         # Ashlar convention: positions[:, 0] = rows (image height axis),
         #                    positions[:, 1] = cols (image width axis).
-        # On the UC2/openUC2 microscope the stage Y axis is horizontal
-        # (moves along the long/wide image axis = cols) and stage X is
-        # vertical (rows).  So the correct mapping is:
-        #   row  = stage_x / (1000 * pixel_size)
-        #   col  = stage_y / (1000 * pixel_size)
+        # Standard microscopy mapping: stage Y → image rows, stage X → image cols.
         scale = 1.0 / (1000.0 * reader._pixel_size)
         raw_positions = np.array(
-            [[t["x"] * scale, t["y"] * scale] for t in reader._tiles],
+            [[t["y"] * scale, t["x"] * scale] for t in reader._tiles],
             dtype=float,
         )
         # Shift so the minimum position is at (0, 0)
@@ -518,7 +514,11 @@ class EdgeAligner(object):
             self.intersection(t1, t2).shape.min()
             for t1, t2 in edges
         ])
-        w = widths.max()
+        # Clamp w to at most half the tile height so max_offset stays positive.
+        # When tiles have large overlap (e.g. high X overlap makes shape.min()
+        # equal to the full tile height), max_offset = size[0] - w would be 0,
+        # causing randint(0) → ValueError: high <= 0.
+        w = min(widths.max(), self.metadata.size[0] // 2)
         max_offset = self.metadata.size[0] - w
         # Number of possible pairs minus number of actual neighbor pairs.
         num_distant_pairs = num_tiles * (num_tiles - 1) // 2 - len(edges)
