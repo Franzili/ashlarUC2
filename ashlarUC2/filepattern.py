@@ -31,9 +31,9 @@ class FilePatternMetadata(reg.Metadata):
     def _enumerate_tiles(self):
         # Translate a restricted subset of the "format" pattern language to
         # a matching regex with named capture.
-        pattern = self.pattern.replace('.', '\.')
-        pattern = pattern.replace('(', '\(')
-        pattern = pattern.replace(')', '\)')
+        pattern = self.pattern.replace('.', r'\.')
+        pattern = pattern.replace('(', r'\(')
+        pattern = pattern.replace(')', r'\)')
         regex = re.sub(r'{([^:}]+)(?:[^}]*)}', r'(?P<\1>.*?)', pattern)
         rows = set()
         cols = set()
