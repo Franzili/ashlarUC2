@@ -337,13 +337,17 @@ class ImSwitchTiffMetadata(Metadata):
     def __init__(self, reader: "ImSwitchTiffReader"):
         self._reader = reader
 
-        # Build positions array: stage coords in µm → pixels
-        # The stage X maps to image columns (axis 1) and Y to rows (axis 0).
-        # We divide by 1000 (stored as µm*1000) and then by pixel_size
-        # (µm/px) to get pixel positions.
+        # Build positions array: stage coords in µm → pixels.
+        # Ashlar convention: positions[:, 0] = rows (image height axis),
+        #                    positions[:, 1] = cols (image width axis).
+        # On the UC2/openUC2 microscope the stage Y axis is horizontal
+        # (moves along the long/wide image axis = cols) and stage X is
+        # vertical (rows).  So the correct mapping is:
+        #   row  = stage_x / (1000 * pixel_size)
+        #   col  = stage_y / (1000 * pixel_size)
         scale = 1.0 / (1000.0 * reader._pixel_size)
         raw_positions = np.array(
-            [[t["y"] * scale, t["x"] * scale] for t in reader._tiles],
+            [[t["x"] * scale, t["y"] * scale] for t in reader._tiles],
             dtype=float,
         )
         # Shift so the minimum position is at (0, 0)
