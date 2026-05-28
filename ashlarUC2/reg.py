@@ -300,14 +300,18 @@ class ImSwitchTiffReader(Reader):
         if sample.ndim == 2:
             self._num_channels = 1
             self._height, self._width = sample.shape
+            self._hwc = False
         elif sample.ndim == 3:
-            # (C, H, W) or (H, W, C) — assume (H, W, C) for RGB
             if sample.shape[2] in (3, 4):
-                self._num_channels = 1   # treat as single greyscale-like frame
+                # (H, W, C) color image — expose each color plane as a channel
+                self._num_channels = sample.shape[2]
                 self._height, self._width = sample.shape[:2]
+                self._hwc = True
             else:
+                # (C, H, W) multi-channel image
                 self._num_channels = sample.shape[0]
                 self._height, self._width = sample.shape[1:]
+                self._hwc = False
         else:
             raise ValueError(f"Unexpected image dimensions: {sample.shape}")
         self._dtype = sample.dtype
@@ -323,9 +327,9 @@ class ImSwitchTiffReader(Reader):
         img = tifffile.imread(tile["filepath"])
         if img.ndim == 2:
             return img
-        elif img.ndim == 3 and img.shape[2] in (3, 4):
-            # RGB — return as-is (single channel)
-            return img
+        elif self._hwc:
+            # (H, W, C) — return the requested colour plane as a 2-D array
+            return img[..., c]
         else:
             # (C, H, W)
             return img[c]
