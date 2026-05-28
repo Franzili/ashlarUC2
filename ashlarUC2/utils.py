@@ -230,16 +230,24 @@ def crop_like(img, target):
 
 
 def dtype_convert(img, dtype):
-    """Convert an image to the requested data-type.
-
-    This is just a wrapper around skimage.util.dtype.convert that silences its
-    FutureWarning, as Ashlar pins skimage to a version before that planned
-    deprecation.
-
-    """
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", r".*scikit-image 1\.0", FutureWarning)
-        return skimage.util.dtype.convert(img, dtype)
+    """Convert an image to the requested data-type."""
+    try:
+        # skimage.util.dtype.convert was deprecated in 0.19 and removed in 1.0.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
+            return skimage.util.dtype.convert(img, dtype)
+    except AttributeError:
+        # scikit-image >= 1.0: implement the equivalent scaling ourselves.
+        if img.dtype == dtype:
+            return img.copy()
+        if np.issubdtype(img.dtype, np.integer) and np.issubdtype(dtype, np.integer):
+            src_max = np.iinfo(img.dtype).max
+            dst_max = np.iinfo(dtype).max
+            return np.clip(
+                np.round(img.astype(np.float64) * (dst_max / src_max)),
+                0, dst_max
+            ).astype(dtype)
+        return img.astype(dtype)
 
 
 def imsave(fname, arr, **kwargs):

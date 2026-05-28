@@ -7,7 +7,10 @@ import numpy as np
 import scipy.spatial.distance
 import scipy.fft
 import skimage.util
-import skimage.util.dtype
+try:
+    import skimage.util.dtype  # removed in scikit-image 1.0; needed only for dtype_convert fallback
+except ImportError:
+    pass
 import skimage.io
 import skimage.exposure
 import skimage.transform
