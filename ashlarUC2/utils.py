@@ -263,5 +263,5 @@ def imsave(fname, arr, **kwargs):
     # we can remove this block and use `skimage.io.imsave` directly again. Or we
     # might just want to switch to tifffile.imsave.
     del kwargs["check_contrast"]
-    import skimage.external.tifffile
-    skimage.external.tifffile.imsave(fname, arr, **kwargs)
+    import tifffile as _tifffile
+    _tifffile.imwrite(fname, arr, **kwargs)
